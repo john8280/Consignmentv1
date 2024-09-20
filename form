@@ -1,0 +1,36 @@
+Form ::
+function consignment_add_item_form() {
+    ob_start();
+    ?>
+    <form id="add-item-form" method="post" enctype="multipart/form-data">
+        <label for="item_name">Item Name:</label>
+        <input type="text" id="item_name" name="item_name" required><br><br>
+
+        <label for="item_description">Description:</label>
+        <textarea id="item_description" name="item_description" required></textarea><br><br>
+
+        <label for="item_image">Item Image:</label>
+        <input type="file" id="item_image" name="item_image" required><br><br>
+
+        <label for="item_price">Price:</label>
+        <input type="number" id="item_price" name="item_price" required><br><br>
+
+        <label for="item_category">Category:</label>
+        <?php
+        $categories = get_terms('product_cat', array('hide_empty' => false));
+        ?>
+        <select id="item_category" name="item_category" required>
+            <?php foreach ($categories as $category) : ?>
+                <option value="<?php echo $category->term_id; ?>"><?php echo $category->name; ?></option>
+            <?php endforeach; ?>
+        </select><br><br>
+
+        <input type="submit" name="submit_item" value="Submit Item">
+    </form>
+    <?php
+    if (isset($_POST['submit_item'])) {
+        handle_item_submission();
+    }
+    return ob_get_clean();
+}
+add_shortcode('additemform', 'consignment_add_item_form');
