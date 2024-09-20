@@ -1,0 +1,31 @@
+function manage_payouts() {
+    // Get sold consignment items
+    $sold_products = wc_get_orders(array(
+        'status' => 'completed',
+    ));
+
+    foreach ($sold_products as $order) {
+        $items = $order->get_items();
+        foreach ($items as $item) {
+            $product_id = $item->get_product_id();
+            $product = wc_get_product($product_id);
+
+            echo '<h2>' . $product->get_name() . '</h2>';
+            echo '<form method="post">
+                    <input type="hidden" name="product_id" value="' . $product_id . '">
+                    <label for="payout_amount">Enter Payout Amount:</label>
+                    <input type="number" name="payout_amount" required>
+                    <input type="submit" name="submit_payout" value="Record Payout">
+                  </form>';
+        }
+    }
+
+    if (isset($_POST['submit_payout'])) {
+        $product_id = intval($_POST['product_id']);
+        $payout_amount = floatval($_POST['payout_amount']);
+        update_post_meta($product_id, '_payout', $payout_amount);
+
+        echo '<p>Payout recorded.</p>';
+    }
+}
+add_shortcode('manage_payouts', 'manage_payouts');
