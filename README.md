@@ -132,5 +132,34 @@ Go to the WordPress Plugin Directory: Submit your plugin.
 Prepare Your ReadMe File: You’ll need to create a readme.txt file following WordPress guidelines.
 Review Plugin Guidelines: Ensure your plugin meets all WordPress plugin guidelines.
 This step is only necessary if you plan to release the plugin publicly on the WordPress Plugin Store.
+Testing the Plugin
+Before deploying, it's crucial to test the plugin thoroughly:
+
+Install and Activate the Plugin:
+
+Zip the woocommerce-consignment folder.
+In your WordPress dashboard, navigate to Plugins > Add New > Upload Plugin.
+Upload the zip file, install, and activate the plugin.
+Verify 'USED_Items' Tag Creation:
+
+Go to Products > Tags and ensure USED_Items exists.
+Submit an Item:
+
+Navigate to the page where you've added the [additemform] shortcode.
+Fill out the form with up to 4 images.
+Submit and ensure the item is saved as pending.
+Approve the Item:
+
+As an admin, go to the page with the [approve_items] shortcode.
+Approve the submitted item and verify it's published with:
+Resized images.
+Tagged as USED_Items.
+SKU prefixed with USED-Item-.
+Manage Payouts:
+
+Ensure that sold items tagged as USED_Items appear in the payout management section.
+Check Image Compression and Resizing:
+
+Verify that uploaded images are resized to 800x800 pixels and are compressed.
 
 
