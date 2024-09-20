@@ -1,0 +1,276 @@
+revised for auto image compression and a few back end feature auto tagged as well as SKU with USED-Item-
+  <?php
+
+// ... (Existing code)
+
+/**
+ * Form to submit items
+ */
+function consignment_add_item_form() {
+    ob_start();
+    ?>
+    <form id="add-item-form" method="post" enctype="multipart/form-data">
+        <label for="item_name">Item Name:</label>
+        <input type="text" id="item_name" name="item_name" required><br><br>
+
+        <label for="item_description">Description:</label>
+        <textarea id="item_description" name="item_description" required></textarea><br><br>
+
+        <label for="item_images">Item Images (up to 4):</label>
+        <input type="file" id="item_images" name="item_images[]" accept="image/*" multiple required><br><br>
+
+        <label for="item_price">Price:</label>
+        <input type="number" id="item_price" name="item_price" step="0.01" required><br><br>
+
+        <label for="item_category">Category:</label>
+        <?php
+        $categories = get_terms('product_cat', array('hide_empty' => false));
+        ?>
+        <select id="item_category" name="item_category" required>
+            <?php foreach ($categories as $category) : ?>
+                <option value="<?php echo esc_attr($category->term_id); ?>"><?php echo esc_html($category->name); ?></option>
+            <?php endforeach; ?>
+        </select><br><br>
+
+        <input type="submit" name="submit_item" value="Submit Item">
+    </form>
+    <?php
+    if (isset($_POST['submit_item'])) {
+        handle_item_submission();
+    }
+    return ob_get_clean();
+}
+
+/**
+ * Handle the item submission
+ */
+function handle_item_submission() {
+    // Verify nonce for security (optional but recommended)
+    // if (!isset($_POST['consignment_nonce']) || !wp_verify_nonce($_POST['consignment_nonce'], 'submit_item')) {
+    //     echo '<p>Security check failed.</p>';
+    //     return;
+    // }
+
+    // Sanitize and validate input fields
+    $item_name = sanitize_text_field($_POST['item_name']);
+    $item_description = sanitize_textarea_field($_POST['item_description']);
+    $item_price = floatval($_POST['item_price']);
+    $item_category = intval($_POST['item_category']);
+
+    // Handle multiple file uploads (up to 4 images)
+    $image_urls = array();
+    if (!empty($_FILES['item_images']['name'][0])) {
+        $total_files = count($_FILES['item_images']['name']);
+        if ($total_files > 4) {
+            echo '<p>You can upload a maximum of 4 images.</p>';
+            return;
+        }
+
+        for ($i = 0; $i < $total_files; $i++) {
+            if ($_FILES['item_images']['error'][$i] === UPLOAD_ERR_OK) {
+                $tmp_name = $_FILES['item_images']['tmp_name'][$i];
+                $name = sanitize_file_name($_FILES['item_images']['name'][$i]);
+
+                // Use WordPress functions to handle uploads
+                $uploaded_file = wp_upload_bits($name, null, file_get_contents($tmp_name));
+                if (!$uploaded_file['error']) {
+                    // Compress and resize image
+                    $image_id = compress_and_resize_image($uploaded_file['file']);
+                    if (!is_wp_error($image_id)) {
+                        $image_url = wp_get_attachment_url($image_id);
+                        $image_urls[] = $image_url;
+                    }
+                }
+            }
+        }
+    }
+
+    if (empty($image_urls)) {
+        echo '<p>At least one image is required.</p>';
+        return;
+    }
+
+    // Save as pending WooCommerce product
+    $new_product = array(
+        'post_title'   => $item_name,
+        'post_content' => $item_description,
+        'post_status'  => 'pending',  // Admin approval needed
+        'post_type'    => 'product',
+    );
+
+    $product_id = wp_insert_post($new_product);
+
+    if ($product_id) {
+        // Set product meta data
+        update_post_meta($product_id, '_regular_price', $item_price);
+        wp_set_object_terms($product_id, $item_category, 'product_cat');
+
+        // Auto-tag as 'USED_Items'
+        wp_set_object_terms($product_id, 'USED_Items', 'product_tag');
+
+        // Auto-generate SKU with 'USED-Item-' prefix
+        $unique_sku = generate_unique_sku('USED-Item-');
+        update_post_meta($product_id, '_sku', $unique_sku);
+        update_post_meta($product_id, '_manage_stock', 'yes');
+        update_post_meta($product_id, '_stock', 1);
+
+        // Handle product images
+        $attachment_ids = array();
+        foreach ($image_urls as $image_url) {
+            $attachment_id = get_attachment_id_from_url($image_url);
+            if ($attachment_id) {
+                $attachment_ids[] = $attachment_id;
+            }
+        }
+
+        if (!empty($attachment_ids)) {
+            // Set the first image as the featured image
+            set_post_thumbnail($product_id, $attachment_ids[0]);
+
+            // Add gallery images
+            update_post_meta($product_id, '_product_image_gallery', implode(',', array_slice($attachment_ids, 1)));
+        }
+
+        // Notify the admin
+        wp_mail(get_option('admin_email'), 'New Consignment Item Submission', 'A new item has been submitted for review.');
+
+        echo '<p>Thank you! Your item has been submitted for review.</p>';
+    } else {
+        echo '<p>There was an error submitting your item. Please try again.</p>';
+    }
+}
+
+/**
+ * Compress and resize image to 800x800 pixels
+ *
+ * @param string $file_path
+ * @return int|WP_Error Attachment ID on success, WP_Error on failure
+ */
+function compress_and_resize_image($file_path) {
+    // Get image size and type
+    list($width, $height, $type) = getimagesize($file_path);
+
+    // Set desired dimensions
+    $max_dim = 800;
+
+    // Calculate new dimensions while maintaining aspect ratio
+    if ($width > $max_dim || $height > $max_dim) {
+        $scale = min($max_dim / $width, $max_dim / $height);
+        $new_width = ceil($scale * $width);
+        $new_height = ceil($scale * $height);
+    } else {
+        $new_width = $width;
+        $new_height = $height;
+    }
+
+    // Load the image
+    switch ($type) {
+        case IMAGETYPE_JPEG:
+            $source = imagecreatefromjpeg($file_path);
+            break;
+        case IMAGETYPE_PNG:
+            $source = imagecreatefrompng($file_path);
+            break;
+        case IMAGETYPE_GIF:
+            $source = imagecreatefromgif($file_path);
+            break;
+        default:
+            return new WP_Error('unsupported_image_type', 'Unsupported image type.');
+    }
+
+    // Create a new true color image
+    $new_image = imagecreatetruecolor($new_width, $new_height);
+
+    // Preserve transparency for PNG and GIF
+    if ($type == IMAGETYPE_PNG || $type == IMAGETYPE_GIF) {
+        imagecolortransparent($new_image, imagecolorallocatealpha($new_image, 0, 0, 0, 127));
+        imagealphablending($new_image, false);
+        imagesavealpha($new_image, true);
+    }
+
+    // Resample the image
+    imagecopyresampled($new_image, $source, 0, 0, 0, 0, $new_width, $new_height, $width, $height);
+
+    // Save the resized image over the original file
+    switch ($type) {
+        case IMAGETYPE_JPEG:
+            imagejpeg($new_image, $file_path, 75); // 75% quality
+            break;
+        case IMAGETYPE_PNG:
+            imagepng($new_image, $file_path, 6); // Compression level: 0-9
+            break;
+        case IMAGETYPE_GIF:
+            imagegif($new_image, $file_path);
+            break;
+    }
+
+    // Free up memory
+    imagedestroy($source);
+    imagedestroy($new_image);
+
+    // Attach the image to the media library
+    $attachment = array(
+        'guid'           => wp_get_upload_dir()['url'] . '/' . basename($file_path),
+        'post_mime_type' => mime_content_type($file_path),
+        'post_title'     => preg_replace('/\.[^.]+$/', '', basename($file_path)),
+        'post_content'   => '',
+        'post_status'    => 'inherit',
+    );
+
+    $attach_id = wp_insert_attachment($attachment, $file_path);
+    require_once(ABSPATH . 'wp-admin/includes/image.php');
+    $attach_data = wp_generate_attachment_metadata($attach_id, $file_path);
+    wp_update_attachment_metadata($attach_id, $attach_data);
+
+    return $attach_id;
+}
+
+/**
+ * Generate a unique SKU with a given prefix
+ *
+ * @param string $prefix
+ * @return string
+ */
+function generate_unique_sku($prefix = 'USED-Item-') {
+    $unique = false;
+    $sku = '';
+    while (!$unique) {
+        $sku = $prefix . strtoupper(wp_generate_password(6, false, false));
+        $existing = wc_get_product_id_by_sku($sku);
+        if (!$existing) {
+            $unique = true;
+        }
+    }
+    return $sku;
+}
+
+/**
+ * Get attachment ID from URL
+ *
+ * @param string $attachment_url
+ * @return int|false Attachment ID or false on failure
+ */
+function get_attachment_id_from_url($attachment_url) {
+    global $wpdb;
+    $upload_dir_paths = wp_upload_dir();
+
+    // Make sure the upload path is in the attachment URL
+    if (false === strpos($attachment_url, $upload_dir_paths['baseurl'])) {
+        return false;
+    }
+
+    // Remove the upload path from the URL to get the relative path
+    $relative_path = str_replace($upload_dir_paths['baseurl'] . '/', '', $attachment_url);
+
+    // Query the database for the attachment ID
+    $attachment_id = $wpdb->get_var($wpdb->prepare(
+        "SELECT ID FROM {$wpdb->posts} WHERE guid LIKE %s",
+        '%' . $relative_path
+    ));
+
+    return $attachment_id ? intval($attachment_id) : false;
+}
+
+// ... (Existing functions like approve_reject_items and manage_payouts)
+
+?>
