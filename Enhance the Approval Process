@@ -1,0 +1,101 @@
+Enhance the Approval Process
+
+<?php
+
+// ... (Existing code)
+
+/**
+ * Approve or reject items
+ */
+function approve_reject_items() {
+    // Check if user is admin
+    if (!current_user_can('manage_options')) {
+        return '<p>You do not have sufficient permissions to access this page.</p>';
+    }
+
+    // Display pending products for approval
+    $pending_products = get_posts(array(
+        'post_type'   => 'product',
+        'post_status' => 'pending',
+        'numberposts' => -1,
+    ));
+
+    if ($pending_products) {
+        foreach ($pending_products as $product) {
+            echo '<h2>' . esc_html($product->post_title) . '</h2>';
+            echo '<p>' . esc_html($product->post_content) . '</p>';
+            echo '<form method="post">
+                    <input type="hidden" name="product_id" value="' . esc_attr($product->ID) . '">
+                    <input type="submit" name="approve_item" value="Approve">
+                    <input type="submit" name="reject_item" value="Reject">
+                  </form>';
+        }
+    } else {
+        echo '<p>No items pending approval.</p>';
+    }
+
+    if (isset($_POST['approve_item'])) {
+        $product_id = intval($_POST['product_id']);
+        wp_update_post(array(
+            'ID'          => $product_id,
+            'post_status' => 'publish',
+        ));
+
+        echo '<p>Item approved and added to the store.</p>';
+    }
+
+    if (isset($_POST['reject_item'])) {
+        $product_id = intval($_POST['product_id']);
+        wp_delete_post($product_id, true);
+
+        echo '<p>Item rejected and removed.</p>';
+    }
+}
+
+/**
+ * Manage Payouts
+ */
+function manage_payouts() {
+    // Get sold consignment items
+    $orders = wc_get_orders(array(
+        'status' => 'completed',
+        'limit'  => -1,
+    ));
+
+    if (!$orders) {
+        echo '<p>No completed orders found.</p>';
+        return;
+    }
+
+    foreach ($orders as $order) {
+        $items = $order->get_items();
+        foreach ($items as $item) {
+            $product_id = $item->get_product_id();
+            $product = wc_get_product($product_id);
+
+            // Only handle consigned items
+            $tags = wp_get_post_terms($product_id, 'product_tag', array('fields' => 'names'));
+            if (!in_array('USED_Items', $tags)) {
+                continue;
+            }
+
+            echo '<h2>' . esc_html($product->get_name()) . '</h2>';
+            echo '<form method="post">
+                    <input type="hidden" name="product_id" value="' . esc_attr($product_id) . '">
+                    <label for="payout_amount">Enter Payout Amount:</label>
+                    <input type="number" name="payout_amount" step="0.01" required>
+                    <input type="submit" name="submit_payout" value="Record Payout">
+                  </form>';
+        }
+    }
+
+    if (isset($_POST['submit_payout'])) {
+        $product_id = intval($_POST['product_id']);
+        $payout_amount = floatval($_POST['payout_amount']);
+        update_post_meta($product_id, '_payout', $payout_amount);
+
+        echo '<p>Payout recorded.</p>';
+    }
+}
+
+?>
