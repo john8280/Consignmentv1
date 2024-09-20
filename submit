@@ -1,0 +1,49 @@
+function handle_item_submission() {
+    $item_name = sanitize_text_field($_POST['item_name']);
+    $item_description = sanitize_textarea_field($_POST['item_description']);
+    $item_price = floatval($_POST['item_price']);
+    $item_category = intval($_POST['item_category']);
+    
+    // Handle file upload
+    if (!empty($_FILES['item_image']['name'])) {
+        $uploaded_file = wp_upload_bits($_FILES['item_image']['name'], null, file_get_contents($_FILES['item_image']['tmp_name']));
+        if (!$uploaded_file['error']) {
+            $image_url = $uploaded_file['url'];
+        }
+    }
+
+    // Save as pending WooCommerce product (requires WooCommerce)
+    $new_product = array(
+        'post_title'   => $item_name,
+        'post_content' => $item_description,
+        'post_status'  => 'pending',  // Admin approval needed
+        'post_type'    => 'product',
+    );
+
+    $product_id = wp_insert_post($new_product);
+
+    if ($product_id) {
+        // Set product meta data
+        update_post_meta($product_id, '_regular_price', $item_price);
+        wp_set_object_terms($product_id, $item_category, 'product_cat');
+
+        // Handle product image
+        if (isset($image_url)) {
+            set_product_image($product_id, $image_url);
+        }
+
+        // Notify the admin
+        wp_mail(get_option('admin_email'), 'New Consignment Item Submission', 'A new item has been submitted for review.');
+
+        echo '<p>Thank you! Your item has been submitted for review.</p>';
+    }
+}
+
+function set_product_image($product_id, $image_url) {
+    // Download the image and add it to the media library
+    $image_id = media_sideload_image($image_url, $product_id, null, 'id');
+    if (!is_wp_error($image_id)) {
+        // Set as product image
+        set_post_thumbnail($product_id, $image_id);
+    }
+}
