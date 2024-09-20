@@ -1,0 +1,112 @@
+// Form to submit items
+function consignment_add_item_form() {
+    ob_start();
+    ?>
+    <form id="add-item-form" method="post" enctype="multipart/form-data">
+        <label for="item_name">Item Name:</label>
+        <input type="text" id="item_name" name="item_name" required><br><br>
+
+        <label for="item_description">Description:</label>
+        <textarea id="item_description" name="item_description" required></textarea><br><br>
+
+        <label for="item_images">Upload up to 4 Images (800x800px):</label>
+        <input type="file" id="item_images" name="item_images[]" multiple="multiple" accept="image/*" required><br><br>
+
+        <label for="item_price">Price:</label>
+        <input type="number" id="item_price" name="item_price" required><br><br>
+
+        <label for="item_category">Category:</label>
+        <?php
+        $categories = get_terms('product_cat', array('hide_empty' => false));
+        ?>
+        <select id="item_category" name="item_category" required>
+            <?php foreach ($categories as $category) : ?>
+                <option value="<?php echo $category->term_id; ?>"><?php echo $category->name; ?></option>
+            <?php endforeach; ?>
+        </select><br><br>
+
+        <input type="submit" name="submit_item" value="Submit Item">
+    </form>
+    <?php
+    if (isset($_POST['submit_item'])) {
+        handle_item_submission();
+    }
+    return ob_get_clean();
+}
+
+// Handle the item submission
+function handle_item_submission() {
+    $item_name = sanitize_text_field($_POST['item_name']);
+    $item_description = sanitize_textarea_field($_POST['item_description']);
+    $item_price = floatval($_POST['item_price']);
+    $item_category = intval($_POST['item_category']);
+
+    $images = $_FILES['item_images'];
+
+    // Create the product as pending for admin approval
+    $new_product = array(
+        'post_title'   => $item_name,
+        'post_content' => $item_description,
+        'post_status'  => 'pending',
+        'post_type'    => 'product',
+    );
+
+    $product_id = wp_insert_post($new_product);
+
+    if ($product_id) {
+        // Set product meta data (price, category, tags)
+        update_post_meta($product_id, '_regular_price', $item_price);
+        wp_set_object_terms($product_id, $item_category, 'product_cat');
+        wp_set_object_terms($product_id, 'USED_Items', 'product_tag');
+
+        // Handle product SKU (with prefix USED-Item)
+        $unique_sku = 'USED-Item-' . $product_id;
+        update_post_meta($product_id, '_sku', $unique_sku);
+
+        // Process and upload up to 4 images
+        if ($images) {
+            for ($i = 0; $i < count($images['name']) && $i < 4; $i++) {
+                if ($images['error'][$i] === UPLOAD_ERR_OK) {
+                    $image_url = compress_and_upload_image($images['tmp_name'][$i], $images['name'][$i], $product_id);
+                    if ($image_url && $i === 0) {
+                        set_post_thumbnail($product_id, $image_url); // Set the first image as the featured image
+                    }
+                }
+            }
+        }
+
+        // Notify the admin
+        wp_mail(get_option('admin_email'), 'New Consignment Item Submission', 'A new item has been submitted for review.');
+
+        echo '<p>Thank you! Your item has been submitted for review.</p>';
+    }
+}
+
+// Compress and upload the image
+function compress_and_upload_image($tmp_name, $filename, $product_id) {
+    $upload = wp_handle_upload(array('tmp_name' => $tmp_name, 'name' => $filename), array('test_form' => false));
+
+    if (!empty($upload['file'])) {
+        // Resize the image to 800x800px
+        $image_editor = wp_get_image_editor($upload['file']);
+        if (!is_wp_error($image_editor)) {
+            $image_editor->resize(800, 800, true); // Resize to 800x800
+            $image_editor->save($upload['file']);  // Save the resized image
+
+            // Attach to WordPress media
+            $attachment = array(
+                'post_mime_type' => $upload['type'],
+                'post_title'     => sanitize_file_name($filename),
+                'post_content'   => '',
+                'post_status'    => 'inherit',
+            );
+            $attach_id = wp_insert_attachment($attachment, $upload['file'], $product_id);
+            require_once(ABSPATH . 'wp-admin/includes/image.php');
+            $attach_data = wp_generate_attachment_metadata($attach_id, $upload['file']);
+            wp_update_attachment_metadata($attach_id, $attach_data);
+
+            return $attach_id;
+        }
+    }
+    return false;
+}
