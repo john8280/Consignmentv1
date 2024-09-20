@@ -1,0 +1,42 @@
+function approve_reject_items() {
+    // Check if user is admin
+    if (!current_user_can('manage_options')) {
+        return;
+    }
+
+    // Display pending products for approval
+    $pending_products = get_posts(array(
+        'post_type'   => 'product',
+        'post_status' => 'pending',
+    ));
+
+    if ($pending_products) {
+        foreach ($pending_products as $product) {
+            echo '<h2>' . $product->post_title . '</h2>';
+            echo '<p>' . $product->post_content . '</p>';
+            echo '<form method="post">
+                    <input type="hidden" name="product_id" value="' . $product->ID . '">
+                    <input type="submit" name="approve_item" value="Approve">
+                    <input type="submit" name="reject_item" value="Reject">
+                  </form>';
+        }
+    }
+
+    if (isset($_POST['approve_item'])) {
+        $product_id = intval($_POST['product_id']);
+        wp_update_post(array(
+            'ID'          => $product_id,
+            'post_status' => 'publish',
+        ));
+
+        echo '<p>Item approved and added to the store.</p>';
+    }
+
+    if (isset($_POST['reject_item'])) {
+        $product_id = intval($_POST['product_id']);
+        wp_delete_post($product_id, true);
+
+        echo '<p>Item rejected and removed.</p>';
+    }
+}
+add_shortcode('approve_items', 'approve_reject_items');
