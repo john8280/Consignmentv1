@@ -1,0 +1,43 @@
+Ensure the USED_Items Tag Exists
+
+<?php
+/*
+Plugin Name: WooCommerce Consignment Store
+Plugin URI: https://yoursite.com
+Description: A consignment plugin for WooCommerce that allows users to submit items for sale and admin to approve/reject.
+Version: 1.1
+Author: John Marruffo
+Author URI: https://yoursite.com
+Text Domain: woocommerce-consignment
+License: GPL2
+*/
+
+if (!defined('ABSPATH')) {
+    exit; // Exit if accessed directly
+}
+
+// Define plugin directory path
+define('WC_CONSIGNMENT_PATH', plugin_dir_path(__FILE__));
+
+// Include necessary files
+require_once WC_CONSIGNMENT_PATH . 'includes/class-consignment-handlers.php';
+
+// Activation Hook to create 'USED_Items' tag if it doesn't exist
+function wc_consignment_activate() {
+    // Create 'USED_Items' tag if it doesn't exist
+    if (!term_exists('USED_Items', 'product_tag')) {
+        wp_insert_term('USED_Items', 'product_tag');
+    }
+}
+register_activation_hook(__FILE__, 'wc_consignment_activate');
+
+// Initialize the plugin
+function wc_consignment_init() {
+    // Register shortcodes, enqueue scripts, and handle plugin initialization
+    add_shortcode('additemform', 'consignment_add_item_form');
+    add_shortcode('approve_items', 'approve_reject_items');
+    add_shortcode('manage_payouts', 'manage_payouts');
+}
+add_action('init', 'wc_consignment_init');
+
+?>
